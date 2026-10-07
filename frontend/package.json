@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from .ai_service import generate_business_intelligence
+from .database import Base, engine, session_local
+from .models import Client, Invoice, Product, Sale, User, Vendor
+from .schemas import (
+    AIRequest,
+    ClientCreate,
+    ClientOut,
+    InvoiceCreate,
+    InvoiceOut,
+    LoginRequest,
+    ProductCreate,
+    ProductOut,
+    SaleCreate,
+    SaleOut,
+    UserOut,
+    VendorCreate,
+    VendorOut,
+)
+from .seed import seed_demo_data
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title="SALIOU GLOBAL BUSINESS",
+    version="1.0.0",
+    description="SaaS de gestion commerciale avec assistant IA",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def get_db():
+    db = session_local()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+def startup_event():
+    db = session_local()
+    try:
+        seed_demo_data(db)
+        db.commit()
+    finally:
+        db.close()
+
+
+@app.get("/")
+def root():
+    return {"app": "SALIOU GLOBAL BUSINESS", "status": "online"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]):
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user or payload.password != user.password:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiants invalides")
+    return {
+        "token": "demo-token-saliou",
+        "user": {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role,
+        },
+    }
+
+
+@app.get("/api/dashboard/summary")
+def dashboard_summary(db: Annotated[Session, Depends(get_db)]):
+    clients_count = db.query(Client).count()
+    products_count = db.query(Product).count()
+    sales_count = db.query(Sale).count()
+    sales_total = db.query(func.coalesce(func.sum(Sale.total_amount), 0)).scalar() or 0
+    pending_invoices = db.query(func.coalesce(func.sum(Invoice.total_amount), 0)).filter(Invoice.status == "pending").scalar() or 0
+    low_stock = db.query(Product).filter(Product.stock_quantity <= Product.low_stock_threshold).count()
+
+    latest_sales = db.query(Sale).order_by(Sale.sale_date.desc()).limit(5).all()
+    sales_data = [
+        {
+            "id": sale.id,
+            "client": sale.client.name if sale.client else "Client",
+            "product": sale.product.name if sale.product else "Produit",
+            "quantity": sale.quantity,
+            "amount": sale.total_amount,
+            "status": sale.status,
+        }
+        for sale in latest_sales
+    ]
+
+    return {
+        "total_clients": clients_count,
+        "total_products": products_count,
+        "total_sales": sales_count,
+        "monthly_revenue": float(sales_total),
+        "pending_invoices": float(pending_invoices),
+        "low_stock": low_stock,
+        "sales_data": sales_data,
+        "message": "Tableau de bord prêt à l'emploi",
+    }
+
+
+@app.get("/api/clients", response_model=list[ClientOut])
+def list_clients(db: Annotated[Session, Depends(get_db)]):
+    return db.query(Client).order_by(Client.id.desc()).all()
+
+
+@app.post("/api/clients", response_model=ClientOut)
+def create_client(payload: ClientCreate, db: Annotated[Session, Depends(get_db)]):
+    client = Client(**payload.model_dump())
+    db.add(client)
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+@app.get("/api/vendors", response_model=list[VendorOut])
+def list_vendors(db: Annotated[Session, Depends(get_db)]):
+    return db.query(Vendor).order_by(Vendor.id.desc()).all()
+
+
+@app.post("/api/vendors", response_model=VendorOut)
+def create_vendor(payload: VendorCreate, db: Annotated[Session, Depends(get_db)]):
+    vendor = Vendor(**payload.model_dump())
+    db.add(vendor)
+    db.commit()
+    db.refresh(vendor)
+    return vendor
+
+
+@app.get("/api/products", response_model=list[ProductOut])
+def list_products(db: Annotated[Session, Depends(get_db)]):
+    return db.query(Product).order_by(Product.id.desc()).all()
+
+
+@app.post("/api/products", response_model=ProductOut)
+def create_product(payload: ProductCreate, db: Annotated[Session, Depends(get_db)]):
+    product = Product(**payload.model_dump())
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+@app.get("/api/sales", response_model=list[SaleOut])
+def list_sales(db: Annotated[Session, Depends(get_db)]):
+    return db.query(Sale).order_by(Sale.sale_date.desc()).all()
+
+
+@app.post("/api/sales", response_model=SaleOut)
+def create_sale(payload: SaleCreate, db: Annotated[Session, Depends(get_db)]):
+    product = db.query(Product).filter(Product.id == payload.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    sale = Sale(
+        client_id=payload.client_id,
+        product_id=payload.product_id,
+        quantity=payload.quantity,
+        unit_price=payload.unit_price or product.unit_price,
+        total_amount=payload.total_amount or (payload.quantity * (payload.unit_price or product.unit_price)),
+        status=payload.status,
+    )
+    product.stock_quantity = max(0, product.stock_quantity - payload.quantity)
+    db.add(sale)
+    db.commit()
+    db.refresh(sale)
+    return sale
+
+
+@app.get("/api/invoices", response_model=list[InvoiceOut])
+def list_invoices(db: Annotated[Session, Depends(get_db)]):
+    return db.query(Invoice).order_by(Invoice.issue_date.desc()).all()
+
+
+@app.post("/api/invoices", response_model=InvoiceOut)
+def create_invoice(payload: InvoiceCreate, db: Annotated[Session, Depends(get_db)]):
+    invoice = Invoice(**payload.model_dump())
+    db.add(invoice)
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+
+@app.post("/api/ai/assistant")
+def ai_assistant(payload: AIRequest, db: Annotated[Session, Depends(get_db)]):
+    summary = db.query(func.coalesce(func.sum(Sale.total_amount), 0)).scalar() or 0
+    total_clients = db.query(Client).count()
+    sales_count = db.query(Sale).count()
+    low_stock = db.query(Product).filter(Product.stock_quantity <= Product.low_stock_threshold).count()
+
+    response = generate_business_intelligence(
+        payload.message,
+        {
+            "monthly_revenue": float(summary),
+            "total_clients": total_clients,
+            "sales_count": sales_count,
+            "low_stock": low_stock,
+        },
+    )
+    return response
+
+
+@app.get("/api/users", response_model=list[UserOut])
+def list_users(db: Annotated[Session, Depends(get_db)]):
+    return db.query(User).order_by(User.id.asc()).all()

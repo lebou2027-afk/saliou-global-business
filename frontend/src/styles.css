@@ -1,0 +1,246 @@
+import { useEffect, useState } from 'react';
+import axios from 'axios';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+const defaultLogin = {
+  email: 'admin@saliou.com',
+  password: 'admin123',
+};
+
+function App() {
+  const [token, setToken] = useState(localStorage.getItem('saliou_token') || '');
+  const [loginForm, setLoginForm] = useState(defaultLogin);
+  const [dashboard, setDashboard] = useState({
+    total_clients: 0,
+    total_products: 0,
+    total_sales: 0,
+    monthly_revenue: 0,
+    pending_invoices: 0,
+    low_stock: 0,
+    sales_data: [],
+  });
+  const [clients, setClients] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [sales, setSales] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [assistantQuestion, setAssistantQuestion] = useState('Quel est le meilleur levier pour augmenter mes ventes ce mois ?');
+  const [assistantResponse, setAssistantResponse] = useState(null);
+
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const loadData = async () => {
+    try {
+      const [summaryRes, clientsRes, productsRes, salesRes, invoicesRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/dashboard/summary`),
+        axios.get(`${API_BASE}/api/clients`),
+        axios.get(`${API_BASE}/api/products`),
+        axios.get(`${API_BASE}/api/sales`),
+        axios.get(`${API_BASE}/api/invoices`),
+      ]);
+
+      setDashboard(summaryRes.data);
+      setClients(clientsRes.data);
+      setProducts(productsRes.data);
+      setSales(salesRes.data);
+      setInvoices(invoicesRes.data);
+    } catch (error) {
+      console.error('Erreur de chargement', error);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      loadData();
+    }
+  }, [token]);
+
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    try {
+      const response = await axios.post(`${API_BASE}/api/auth/login`, loginForm);
+      const newToken = response.data.token;
+      localStorage.setItem('saliou_token', newToken);
+      setToken(newToken);
+    } catch (error) {
+      alert('Erreur de connexion. Vérifiez vos identifiants.');
+    }
+  };
+
+  const handleAskAssistant = async () => {
+    try {
+      const response = await axios.post(`${API_BASE}/api/ai/assistant`, { message: assistantQuestion }, { headers: authHeader });
+      setAssistantResponse(response.data);
+    } catch (error) {
+      console.error('Erreur IA', error);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('saliou_token');
+    setToken('');
+  };
+
+  if (!token) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="brand-block">
+            <span className="brand-badge">SALIOU</span>
+            <h1>GLOBAL BUSINESS</h1>
+            <p>Plateforme de gestion commerciale intelligente</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="auth-form">
+            <label>
+              Email
+              <input
+                type="email"
+                value={loginForm.email}
+                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+              />
+            </label>
+
+            <label>
+              Mot de passe
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+              />
+            </label>
+
+            <button type="submit">Se connecter</button>
+          </form>
+
+          <div className="demo-credentials">
+            <strong>Identifiants de démonstration :</strong>
+            <span>admin@saliou.com / admin123</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dashboard-shell">
+      <header className="topbar">
+        <div>
+          <span className="brand-mini">SALIOU</span>
+          <h2>GLOBAL BUSINESS</h2>
+        </div>
+        <button className="logout-button" onClick={logout}>Déconnexion</button>
+      </header>
+
+      <section className="kpis">
+        <div className="kpi-card">
+          <span>Clients</span>
+          <strong>{dashboard.total_clients}</strong>
+        </div>
+        <div className="kpi-card">
+          <span>Produits</span>
+          <strong>{dashboard.total_products}</strong>
+        </div>
+        <div className="kpi-card">
+          <span>Ventes</span>
+          <strong>{dashboard.total_sales}</strong>
+        </div>
+        <div className="kpi-card accent">
+          <span>Revenu</span>
+          <strong>{Number(dashboard.monthly_revenue || 0).toLocaleString()} FCFA</strong>
+        </div>
+      </section>
+
+      <section className="grid-two">
+        <div className="panel">
+          <h3>Dernières ventes</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Produit</th>
+                <th>Qté</th>
+                <th>Montant</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dashboard.sales_data?.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.client}</td>
+                  <td>{item.product}</td>
+                  <td>{item.quantity}</td>
+                  <td>{Number(item.amount).toLocaleString()} FCFA</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="panel">
+          <h3>Stock critique</h3>
+          <p className="big-number">{dashboard.low_stock}</p>
+          <p>Produits qui nécessitent une commande rapide.</p>
+          <div className="warning-box">
+            <span>Factures en attente</span>
+            <strong>{Number(dashboard.pending_invoices || 0).toLocaleString()} FCFA</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid-three">
+        <div className="panel">
+          <h3>Clients</h3>
+          <ul className="list-compact">
+            {clients.slice(0, 5).map((client) => (
+              <li key={client.id}>{client.name} <small>{client.company || client.city}</small></li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="panel">
+          <h3>Produits</h3>
+          <ul className="list-compact">
+            {products.slice(0, 5).map((product) => (
+              <li key={product.id}>{product.name} <small>{product.stock_quantity} en stock</small></li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="panel">
+          <h3>Factures</h3>
+          <ul className="list-compact">
+            {invoices.slice(0, 5).map((invoice) => (
+              <li key={invoice.id}>#{invoice.id} <small>{invoice.status}</small></li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section className="panel assistant-panel">
+        <h3>Assistant IA SALIOU</h3>
+        <div className="assistant-form-row">
+          <input
+            value={assistantQuestion}
+            onChange={(e) => setAssistantQuestion(e.target.value)}
+            placeholder="Posez une question à l'IA commerciale"
+          />
+          <button onClick={handleAskAssistant}>Analyser</button>
+        </div>
+
+        {assistantResponse && (
+          <div className="assistant-result">
+            <p><strong>Résumé :</strong> {assistantResponse.summary}</p>
+            <ul>
+              {assistantResponse.action_points?.map((point, index) => (
+                <li key={index}>{point}</li>
+              ))}
+            </ul>
+            <small>Confiance IA: {assistantResponse.confidence * 100}% · Modèle: {assistantResponse.model}</small>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+export default App;

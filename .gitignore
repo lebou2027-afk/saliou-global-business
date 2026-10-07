@@ -1,0 +1,101 @@
+# SALIOU GLOBAL BUSINESS
+
+Une plateforme SaaS de gestion commerciale pour PME/entreprises commerciales, équipée d'un assistant IA pour les recommandations, le suivi commercial et les rapports.
+
+## Aperçu
+
+- Gestion des clients
+- Gestion des fournisseurs
+- Gestion des produits et stock
+- Suivi des ventes
+- Factures et paiements
+- Tableau de bord KPI
+- Assistant IA d'analyse commerciale
+- Authentification admin
+
+## Stack technique
+
+- Frontend: React + Vite
+- Backend: FastAPI + SQLAlchemy
+- Base de données: SQLite (prêt pour évoluer vers PostgreSQL)
+- IA: contrainte OpenAI si clé fournie, sinon moteur heuristique local prêt à l'emploi
+
+## Accès par défaut
+
+- Email: admin@saliou.com
+- Mot de passe: admin123
+
+## Démarrage rapide
+
+### 1. Backend
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 2. Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev -- --host 0.0.0.0
+```
+
+### 3. Accès
+
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- Documentation Swagger: http://localhost:8000/docs
+
+## IA
+
+Créez une clé OpenAI dans `backend/.env` :
+
+```env
+OPENAI_API_KEY=your_key_here
+```
+
+Si aucune clé n'est fournie, l'application utilise un moteur d'analyse local pour produire des recommandations qualitatives.
+
+## Structure du projet
+
+```text
+.
+├── backend/
+│   ├── app/
+│   ├── .env.example
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── saliou_business.db
+├── frontend/
+│   ├── src/
+│   ├── .env.example
+│   ├── Dockerfile
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+├── docker-compose.yml
+├── .gitignore
+└── README.md
+```
+
+## Commandes utiles
+
+```bash
+# backend
+uvicorn app.main:app --reload
+
+# frontend
+npm run build
+npm run preview
+```
+
+## Licence
+
+MIT
