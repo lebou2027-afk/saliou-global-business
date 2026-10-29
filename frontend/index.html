@@ -1,1 +1,18 @@
-VITE_API_URL=http://localhost:8000
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SALIOU GLOBAL BUSINESS</title>
+<link rel="manifest" href="/saliou-global-business/manifest.json">
+<meta name="theme-color" content="#0a1f44">
+<link rel="icon" href="https://cdn-icons-png.flaticon.com/512/3081/3081980.png">
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="./source/main.jsx"></script>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/saliou-global-business/sw.js');}
+</script>
+</body>
+</html>
